@@ -41,7 +41,7 @@ def train(args):
     it, enqueue_op = dp.provide(sess)
 
     rnet_model = model.RNet(opt)
-    loss, acc, pred_si, pred_ei = rnet_model.build_model(it)
+    loss, pt = rnet_model.build_model(it)
     train_op = tf.train.AdadeltaOptimizer(1.0, rho=0.95, epsilon=1e-06).minimize(loss)
 
     # saving model
@@ -62,7 +62,7 @@ def train(args):
             print('Training...{}th epoch'.format(i))
             training_time = int(dp.num_sample/dp.batch_size)
             for i in tqdm(range(training_time)):
-                _, loss_val, acc_val, p_si, p_ei = sess.run([train_op, loss, acc, pred_si, pred_ei])
+                loss_val, pt_val = sess.run([train_op, loss, pt])
                 if i % 100 == 0:
                     print('iter:{} - loss:{}'.format(i, loss_val))
 

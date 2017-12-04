@@ -94,8 +94,16 @@ class GatedAttentionSelfMatchingCell(RNNCell):
 
 class PointerGRUCell(RNNCell):
 
-    def __init__(self, num_units, weights, encoded_question, reuse=None):
+    def __init__(self, num_units, output_size, weights, encoded_passage, reuse=None):
         super(PointerGRUCell, self).__init__(_reuse=reuse)
+        self._num_units = num_units
+        self._output_size = output_size
+        self._cell = tf.contrib.rnn.GRUCell(num_units)
+        self.WhP = weights['WhP']
+        self.Wha = weights['Wha']
+        self.v = weights['v']
+        self.hP = encoded_passage
+        self.WhP_hP = mat_weight_mul(self.hP, self.WhP)
 
     @property
     def state_size(self):
@@ -103,7 +111,16 @@ class PointerGRUCell(RNNCell):
 
     @property
     def output_size(self):
-        return self._num_units
+        return self._output_size
 
     def call(self, inputs, state):
-        pass
+        with vs.variable_scope('pointer_pool'):
+            h_tm1a = state
+            Wha_htm1a = tf.expand_dims(tf.matmul(h_tm1a, self.Wha), 1)  # batch_size x 1 x H
+
+            tanh = tf.tanh(self.WhP_hP + Wha_htm1a)
+            s_t = mat_weight_mul(tanh, self.v)
+            a_t = tf.nn.softmax(s_t, 1)
+            c_t = tf.reduce_sum(tf.multiply(a_t, self.hP), 1)
+            new_state, _ = self._cell.call(c_t, state)
+            return tf.squeeze(a_t), new_state
