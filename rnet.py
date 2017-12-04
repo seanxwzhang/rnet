@@ -14,7 +14,6 @@ import preprocess
 def run():
     parser = argparse.ArgumentParser(description='command line rnet trainer and evaluator')
     parser.add_argument('action', choices=['train', 'eval'])
-    #train_parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate')
     parser.add_argument('--load', type=bool, default=False, help='load models')
     parser.add_argument('--save_dir', type=str, default='Models/save/', help='directory to save')
 

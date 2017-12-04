@@ -9,6 +9,7 @@ import collections
 import json
 import numpy as np
 import nltk
+from tqdm import tqdm
 import threading
 nltk.download('punkt')
 from nltk.tokenize import word_tokenize
@@ -46,10 +47,8 @@ class DataProcessor:
             # memorize all words and create embedding efficiently
             word_map = set()
             articles = []
-            for ai, article in enumerate(source_data['data']):
+            for ai, article in enumerate(tqdm(source_data['data'])):
                 paragraphs = []
-                if ai%10 == 0:
-                    print('processing article {}/{}'.format(ai, n_article))
                 for pi, p in enumerate(article['paragraphs']):
                     context = p['context']
                     context_words = word_tokenize(context)
@@ -90,9 +89,9 @@ class DataProcessor:
             'articles': articles
         }
         print('Saving...')
-        with open(os.path.join('data', self.share_path), 'w') as f:
+        with open(self.share_path, 'w') as f:
             json.dump(share_data, f)
-        with open(os.path.join('data', self.sink_path), 'w') as f:
+        with open(self.sink_path, 'w') as f:
             json.dump(sink_data, f)
         print('SQuAD '+self.data_type+' preprossing finished!')
 
