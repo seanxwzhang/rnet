@@ -1,5 +1,6 @@
 # TODO: add bias
 import math
+import tensorflow as tf
 from rnn_cells import mat_weight_mul, GatedAttentionCell, GatedAttentionSelfMatchingCell, PointerGRUCell
 
 class RNet:
@@ -20,7 +21,7 @@ class RNet:
             self.WvP_hat = self.random_weight(h, h, name='WvP_hat')
             self.WvQ = self.random_weight(1, h, name='WvQ')
 
-    def build_model(self):
+    def build_model(self, input_pipeline):
         options = self.options
         # placeholders
         batch_size = options['batch_size']
@@ -28,10 +29,14 @@ class RNet:
         q_length = options['q_length']
         emb_dim = options['emb_dim']
 
-        eP = tf.placeholder(tf.float32, [batch_size, p_length, emb_dim])
-        eQ = tf.placeholder(tf.float32, [batch_size, q_length, emb_dim])
-        asi = tf.placeholder(tf.float32, [batch_size, p_length])
-        aei = tf.placeholder(tf.float32, [batch_size, p_length])
+        eP = input_pipeline['eP']
+        eQ = input_pipeline['eQ']
+        asi = input_pipeline['asi']
+        aei = input_pipeline['aei']
+        # eP = tf.placeholder(tf.float32, [batch_size, p_length, emb_dim])
+        # eQ = tf.placeholder(tf.float32, [batch_size, q_length, emb_dim])
+        # asi = tf.placeholder(tf.float32, [batch_size, p_length])
+        # aei = tf.placeholder(tf.float32, [batch_size, p_length])
 
         print('Shape of eP: {}'.format(eP.get_shape()))
         print('Shape of eQ: {}'.format(eQ.get_shape()))
