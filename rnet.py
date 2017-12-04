@@ -8,7 +8,8 @@ import string
 import time
 import threading
 from tqdm import tqdm
-import model
+from models import model
+
 import preprocess
 
 def run():
@@ -36,7 +37,7 @@ def train(args):
     sess = tf.Session()
     it, enqueue_op = dp.provide(sess)
 
-    rnet_model = model.model.RNet(opt)
+    rnet_model = model.RNet(opt)
     loss, acc, pred_si, pred_ei = rnet_model.build_model(it)
     train_op = tf.train.AdadeltaOptimizer(1.0, rho=0.95, epsilon=1e-06).minimize(loss)
 

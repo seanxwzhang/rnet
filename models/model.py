@@ -1,7 +1,7 @@
 # TODO: add bias
 import math
 import tensorflow as tf
-from rnn_cells import mat_weight_mul, GatedAttentionCell, GatedAttentionSelfMatchingCell, PointerGRUCell
+from .rnn_cells import mat_weight_mul, GatedAttentionCell, GatedAttentionSelfMatchingCell, PointerGRUCell
 
 class RNet:
 

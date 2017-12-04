@@ -18,6 +18,8 @@
         "read_batch": 30,
         "token_size": "6B",
         "queue_size": 1000,
-        "num_threads": 1
+        "num_threads": 1,
+        "h_size": 75,
+        "in_keep_prob": 0.8 
 	}
 }

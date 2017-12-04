@@ -184,7 +184,7 @@ def read_data(data_type, opt):
     return DataProcessor(data_type, opt)
 
 def run():
-    opt = json.load(open('model/config.json', 'r'))['rnet']
+    opt = json.load(open('models/config.json', 'r'))['rnet']
     dp = DataProcessor('train', opt)
     dp.process()
 
