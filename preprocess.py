@@ -29,8 +29,17 @@ class DataProcessor:
         self.queue_size = opt['queue_size']
         self.num_threads = opt['num_threads']
         self.read_batch = opt['read_batch']
+        self.num_sample = 1
         self.no = 0
         self.no_lock = threading.Lock()
+
+    @property
+    def batch_size(self):
+        return self.batch_size
+
+    @property
+    def num_sample(self):
+        return self.num_sample
 
     def process(self):
         '''
@@ -39,6 +48,9 @@ class DataProcessor:
         2. find embedding for all words that showed up
         3. stored
         '''
+        if os.path.isfile(self.sink_path):
+            print('processed file already exists: {}'.format(self.sink_path))
+            return
         with open(self.source_path, 'r') as source_file:
             source_data = json.load(source_file)
             sink_data = []
@@ -47,6 +59,7 @@ class DataProcessor:
             # memorize all words and create embedding efficiently
             word_map = set()
             articles = []
+            print('Processing articles')
             for ai, article in enumerate(tqdm(source_data['data'])):
                 paragraphs = []
                 for pi, p in enumerate(article['paragraphs']):
@@ -97,7 +110,7 @@ class DataProcessor:
 
 
     def get_word_embedding(self, word_map):
-        print('generating embedding')
+        print('generating embedding, this will take a while')
         word2vec = {}
         with open(self.glove_path, 'r', encoding='utf-8') as fn:
             for line in fn:
@@ -123,15 +136,15 @@ class DataProcessor:
         assert(self.share_data)
         while not coord.should_stop():
             self.no_lock.acquire()
-            start_idx = self.no
-            end_idx = min(self.num_sample, self.no + self.read_batch)
-            self.no = end_idx
+            start_idx = self.no % self.num_sample
+            end_idx = (start_idx + self.read_batch) % self.num_sample
+            self.no += self.read_batch
             self.no_lock.release()
             w2v_table = self.share_data['w2v']
             p = np.zeros((self.p_length, self.emb_dim))
             q = np.zeros((self.q_length, self.emb_dim))
-            asi = np.zeros((self.p_length))
-            aei = np.zeros((self.p_length))
+            asi = 0
+            aei = 0
             for i in range(start_idx, end_idx):
                 sample = self.sink_data[i]
                 question = sample['question']
@@ -146,8 +159,8 @@ class DataProcessor:
                         q[j] = w2v_table[question[j]]
                     except KeyError:
                         pass
-                asi[sample['si']] = 1.0
-                aei[sample['ei']] = 1.0
+                asi = sample['si']
+                aei = sample['ei']
                 sess.run(enqueue_op, feed_dict={self.it['eP']: p, self.it['eQ']: q, self.it['asi']: asi, self.it['aei']: aei})
         
 
@@ -161,8 +174,8 @@ class DataProcessor:
             self.num_sample = len(self.sink_data)
         eP = tf.placeholder(tf.float32, [self.p_length, self.emb_dim])
         eQ = tf.placeholder(tf.float32, [self.q_length, self.emb_dim])
-        asi = tf.placeholder(tf.float32, [self.p_length])
-        aei = tf.placeholder(tf.float32, [self.p_length])
+        asi = tf.placeholder(tf.float32)
+        aei = tf.placeholder(tf.float32)
         self.it = {'eP': eP, 'eQ': eQ, 'asi': asi, 'aei': aei}
         with tf.variable_scope("queue"):
             q = tf.FIFOQueue(self.queue_size, [tf.float32, tf.float32, tf.float32, tf.float32], shapes=[[self.p_length, self.emb_dim], [self.q_length, self.emb_dim], [self.p_length], [self.p_length]])
@@ -185,8 +198,10 @@ def read_data(data_type, opt):
 
 def run():
     opt = json.load(open('models/config.json', 'r'))['rnet']
-    dp = DataProcessor('train', opt)
-    dp.process()
+    dp_train = DataProcessor('train', opt)
+    db_dev = DataProcessor('dev', opt)
+    dp_train.process()
+    db_dev.process()
 
 if __name__ == "__main__":
 	run()
