@@ -6,3 +6,4 @@ data/*.json
 *.ipynb
 __pycache__
 */__pycache__
+models/save

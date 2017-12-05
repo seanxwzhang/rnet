@@ -115,7 +115,7 @@ class DataProcessor:
         print('generating embedding, this will take a while')
         word2vec = {}
         with open(self.glove_path, 'r', encoding='utf-8') as fn:
-            for line in tqdm(fn, totoal=get_num_lines(self.glove_path)):
+            for line in tqdm(fn, total=get_num_lines(self.glove_path)):
                 array = line.strip().split(' ')
                 w = array[0]
                 v = list(map(float, array[1:]))
@@ -181,11 +181,11 @@ class DataProcessor:
         aei = tf.placeholder(tf.int32, [1])
         self.it = {'eP': eP, 'eQ': eQ, 'asi': asi, 'aei': aei}
         with tf.variable_scope("queue"):
-            q = tf.FIFOQueue(self.queue_size, [tf.float32, tf.float32, tf.int32, tf.int32], shapes=[[self.p_length, self.emb_dim], [self.q_length, self.emb_dim], [1], [1]])
-            enqueue_op = q.enqueue([eP, eQ, asi, aei])
+            self.q = tf.FIFOQueue(self.queue_size, [tf.float32, tf.float32, tf.int32, tf.int32], shapes=[[self.p_length, self.emb_dim], [self.q_length, self.emb_dim], [1], [1]])
+            enqueue_op = self.q.enqueue([eP, eQ, asi, aei])
             # qr = tf.train.QueueRunner(q, [enqueue_op] * self.num_threads)
             # tf.train.add_queue_runner(qr)
-            eP_batch, eQ_batch, asi_batch, aei_batch = q.dequeue_many(self.batch_size)
+            eP_batch, eQ_batch, asi_batch, aei_batch = self.q.dequeue_many(self.batch_size)
             
         input_pipeline = {
             'eP': eP_batch,

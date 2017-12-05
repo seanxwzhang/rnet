@@ -52,7 +52,7 @@ def train(args):
     with sess.as_default():
         sess.run(tf.global_variables_initializer())
         # start feeding threads
-        coord = tf.train.Coordinator()
+        coord = tf.train.Coordinator(ignore_live_threads=True)
         threads = []
         for i in range(opt['num_threads']):
             t = threading.Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i))
@@ -62,12 +62,14 @@ def train(args):
         for i in range(args.epochs):
             print('Training...{}th epoch'.format(i))
             training_time = int(dp.num_sample/dp.batch_size)
-            for i in tqdm(range(training_time)):
+            for j in tqdm(range(training_time)):
                 _, avg_loss_val, pt_val = sess.run([train_op, avg_loss, pt])
-                if i % 100 == 0:
-                    print('iter:{} - average loss:{}'.format(i, avg_loss_val))
+                if j % 100 == 0:
+                    print('iter:{} - average loss:{}'.format(j, avg_loss_val))
             save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model{}.ckpt'.format(i)))
         
+        cancel_op = self.q.close(cancel_pending_enqueues=True)
+        sess.run(cancel_op)
         coord.request_stop()
         coord.join(threads)
     
