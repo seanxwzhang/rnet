@@ -17,7 +17,7 @@ def run():
     parser.add_argument('action', choices=['train', 'eval'])
     parser.add_argument('--load', type=bool, default=False, help='load models')
     parser.add_argument('--epochs', type=int, default=1, help='Expochs')
-    parser.add_argument('--save_dir', type=str, default='Models/save/', help='directory to save')
+    parser.add_argument('--save_dir', type=str, default='models/save/', help='directory to save')
 
     args = parser.parse_args()
 
@@ -27,8 +27,8 @@ def run():
     elif args.action == 'eval':
         evaluate(args)
 
-def feeder(dp, sess, enqueue_op, coord):
-    dp.load_and_enqueue(sess, enqueue_op, coord)
+def feeder(dp, sess, enqueue_op, coord, i):
+    dp.load_and_enqueue(sess, enqueue_op, coord, i)
 
 def train(args):
     opt = json.load(open('models/config.json', 'r'))['rnet']
@@ -50,34 +50,42 @@ def train(args):
     startTime = time.time()
     with sess.as_default():
         sess.run(tf.global_variables_initializer())
-
+        # start feeding threads
         coord = tf.train.Coordinator()
         threads = []
         for i in range(opt['num_threads']):
-            t = threading.Thread(target=feeder, args=(dp, sess, enqueue_op, coord))
+            t = threading.Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i))
             t.start()
             threads.append(t)
-        
-        for i in range(args.epochs)：
+        # start training
+        for i in range(args.epochs):
             print('Training...{}th epoch'.format(i))
             training_time = int(dp.num_sample/dp.batch_size)
             for i in tqdm(range(training_time)):
-                loss_val, pt_val = sess.run([train_op, loss, pt])
+                _, loss_val, pt_val = sess.run([train_op, loss, pt])
                 if i % 100 == 0:
                     print('iter:{} - loss:{}'.format(i, loss_val))
-
+            save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model{}.ckpt'.format(i)))
+        
         coord.request_stop()
         coord.join(threads)
-
+    
+    save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model_final_{}.ckpt'.format(time.strftime("%Y%m%d-%H%M%S"))))
     
     sess.close()
     print('Training finished, took {} seconds'.format(time.time() - startTime))
 
-
-
 def evaluate(args):
+    opt = json.load(open('models/config.json', 'r'))['rnet']
+    print('Reading data')
+    dp = preprocess.read_data('dev', opt)
+    sess = tf.Session()
+    it, enqueue_op = dp.provide(sess)
+    loss, pt = model.build_model(it)
 
-    pass
+    saver = tf.train.Saver()
+
+
 
 if __name__ == '__main__':
     run()

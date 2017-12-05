@@ -14,6 +14,16 @@ import threading
 nltk.download('punkt')
 from nltk.tokenize import word_tokenize
 
+import mmap
+
+def get_num_lines(file_path):
+    fp = open(file_path, "r+")
+    buf = mmap.mmap(fp.fileno(), 0)
+    lines = 0
+    while buf.readline():
+        lines += 1
+    return lines
+
 class DataProcessor:
     def __init__(self, data_type, opt):
         self.data_type = data_type
@@ -21,7 +31,7 @@ class DataProcessor:
         self.source_path = os.path.join('data', self.data_type+'-v1.1.json')
         self.sink_path = os.path.join('data', 'processed_'+self.data_type+'-v1.1.json')
         self.glove_path = os.path.join('data', 'glove.'+self.opt['token_size']+'.'+str(self.opt['emb_dim'])+'d.txt')
-        self.share_path = os.path.join('data', 'share.'+self.opt['token_size']+'.'+str(self.opt['emb_dim'])+'d.txt')
+        self.share_path = os.path.join('data', 'share_'+self.data_type+'.'+self.opt['token_size']+'.'+str(self.opt['emb_dim'])+'d.txt')
         self.batch_size = opt['batch_size']
         self.p_length = opt['p_length']
         self.q_length = opt['q_length']
@@ -32,14 +42,6 @@ class DataProcessor:
         self.num_sample = 1
         self.no = 0
         self.no_lock = threading.Lock()
-
-    @property
-    def batch_size(self):
-        return self.batch_size
-
-    @property
-    def num_sample(self):
-        return self.num_sample
 
     def process(self):
         '''
@@ -94,7 +96,7 @@ class DataProcessor:
                             'id': qa['id']
                             }
                         sink_data.append(sample)
-                articles.append(paragraphs) 
+                articles.append(paragraphs[:]) 
 
         w2v = self.get_word_embedding(word_map)
         share_data = {
@@ -113,7 +115,7 @@ class DataProcessor:
         print('generating embedding, this will take a while')
         word2vec = {}
         with open(self.glove_path, 'r', encoding='utf-8') as fn:
-            for line in fn:
+            for line in tqdm(fn, totoal=get_num_lines(self.glove_path)):
                 array = line.strip().split(' ')
                 w = array[0]
                 v = list(map(float, array[1:]))
@@ -128,12 +130,13 @@ class DataProcessor:
         print("{}/{} of word vocab have corresponding vectors in {}".format(len(word2vec), len(word_map), self.glove_path))
         return word2vec
 
-    def load_and_enqueue(self, sess, enqueue_op, coord):
+    def load_and_enqueue(self, sess, enqueue_op, coord, iden):
         '''
         enqueues training sample, per read_batch per time 
         '''
         assert(self.sink_data)
         assert(self.share_data)
+        print('feeder {} started'.format(iden))
         while not coord.should_stop():
             self.no_lock.acquire()
             start_idx = self.no % self.num_sample
@@ -143,12 +146,12 @@ class DataProcessor:
             w2v_table = self.share_data['w2v']
             p = np.zeros((self.p_length, self.emb_dim))
             q = np.zeros((self.q_length, self.emb_dim))
-            asi = 0
-            aei = 0
+            asi = np.zeros((1))
+            aei = np.zeros((1))
             for i in range(start_idx, end_idx):
                 sample = self.sink_data[i]
                 question = sample['question']
-                paragraph = self.share_data['article'][sample['ai']][sample['pi']]
+                paragraph = self.share_data['articles'][sample['ai']][sample['pi']]
                 for j in range(min(len(paragraph), self.p_length)):
                     try:
                         p[j] = w2v_table[paragraph[j]]
@@ -159,8 +162,8 @@ class DataProcessor:
                         q[j] = w2v_table[question[j]]
                     except KeyError:
                         pass
-                asi = sample['si']
-                aei = sample['ei']
+                asi[0] = sample['si']
+                aei[0] = sample['ei']
                 sess.run(enqueue_op, feed_dict={self.it['eP']: p, self.it['eQ']: q, self.it['asi']: asi, self.it['aei']: aei})
         
 
@@ -174,11 +177,11 @@ class DataProcessor:
             self.num_sample = len(self.sink_data)
         eP = tf.placeholder(tf.float32, [self.p_length, self.emb_dim])
         eQ = tf.placeholder(tf.float32, [self.q_length, self.emb_dim])
-        asi = tf.placeholder(tf.float32)
-        aei = tf.placeholder(tf.float32)
+        asi = tf.placeholder(tf.int32, [1])
+        aei = tf.placeholder(tf.int32, [1])
         self.it = {'eP': eP, 'eQ': eQ, 'asi': asi, 'aei': aei}
         with tf.variable_scope("queue"):
-            q = tf.FIFOQueue(self.queue_size, [tf.float32, tf.float32, tf.float32, tf.float32], shapes=[[self.p_length, self.emb_dim], [self.q_length, self.emb_dim], [self.p_length], [self.p_length]])
+            q = tf.FIFOQueue(self.queue_size, [tf.float32, tf.float32, tf.int32, tf.int32], shapes=[[self.p_length, self.emb_dim], [self.q_length, self.emb_dim], [1], [1]])
             enqueue_op = q.enqueue([eP, eQ, asi, aei])
             # qr = tf.train.QueueRunner(q, [enqueue_op] * self.num_threads)
             # tf.train.add_queue_runner(qr)
