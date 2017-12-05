@@ -52,7 +52,7 @@ def train(args):
     with sess.as_default():
         sess.run(tf.global_variables_initializer())
         # start feeding threads
-        coord = tf.train.Coordinator(ignore_live_threads=True)
+        coord = tf.train.Coordinator()
         threads = []
         for i in range(opt['num_threads']):
             t = threading.Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i))
@@ -68,10 +68,10 @@ def train(args):
                     print('iter:{} - average loss:{}'.format(j, avg_loss_val))
             save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model{}.ckpt'.format(i)))
         
-        cancel_op = self.q.close(cancel_pending_enqueues=True)
+        cancel_op = dp.q.close(cancel_pending_enqueues=True)
         sess.run(cancel_op)
         coord.request_stop()
-        coord.join(threads)
+        coord.join(threads, ignore_live_threads=True)
     
     save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model_final_{}.ckpt'.format(time.strftime("%Y%m%d-%H%M%S"))))
     
