@@ -42,6 +42,7 @@ def train(args):
 
     rnet_model = model.RNet(opt)
     loss, pt = rnet_model.build_model(it)
+    avg_loss = tf.reduce_mean(loss)
     train_op = tf.train.AdadeltaOptimizer(1.0, rho=0.95, epsilon=1e-06).minimize(loss)
 
     # saving model
@@ -62,9 +63,9 @@ def train(args):
             print('Training...{}th epoch'.format(i))
             training_time = int(dp.num_sample/dp.batch_size)
             for i in tqdm(range(training_time)):
-                _, loss_val, pt_val = sess.run([train_op, loss, pt])
+                _, avg_loss_val, pt_val = sess.run([train_op, avg_loss, pt])
                 if i % 100 == 0:
-                    print('iter:{} - loss:{}'.format(i, loss_val))
+                    print('iter:{} - average loss:{}'.format(i, avg_loss_val))
             save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model{}.ckpt'.format(i)))
         
         coord.request_stop()
