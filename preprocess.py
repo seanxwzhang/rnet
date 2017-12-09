@@ -178,6 +178,7 @@ class DataProcessor:
             # paragraph length filter: (train only)
             if self.data_type == 'train':
                 self.sink_data = [sample for sample in self.sink_data if sample['ei'] < self.opt['p_length']]
+                self.num_sample = len(self.sink_data)
         eP = tf.placeholder(tf.float32, [self.p_length, self.emb_dim])
         eQ = tf.placeholder(tf.float32, [self.q_length, self.emb_dim])
         asi = tf.placeholder(tf.int32, [1])

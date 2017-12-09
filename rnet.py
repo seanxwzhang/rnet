@@ -41,8 +41,9 @@ def train(args):
     it, enqueue_op = dp.provide(sess)
 
     rnet_model = model.RNet(opt)
-    loss, pt = rnet_model.build_model(it)
+    loss, pt, accuracy = rnet_model.build_model(it)
     avg_loss = tf.reduce_mean(loss)
+    avg_accu = tf.reduce_mean(accuracy)
     train_op = tf.train.AdadeltaOptimizer(1.0, rho=0.95, epsilon=1e-06).minimize(loss)
 
     # saving model
@@ -51,6 +52,7 @@ def train(args):
     startTime = time.time()
     with sess.as_default():
         sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
         # start feeding threads
         coord = tf.train.Coordinator()
         threads = []
@@ -63,9 +65,9 @@ def train(args):
             print('Training...{}th epoch'.format(i))
             training_time = int(dp.num_sample/dp.batch_size)
             for j in tqdm(range(training_time)):
-                _, avg_loss_val, pt_val = sess.run([train_op, avg_loss, pt])
+                _, avg_loss_val, pt_val, avg_accu_val = sess.run([train_op, avg_loss, pt, avg_accu])
                 if j % 100 == 0:
-                    print('iter:{} - average loss:{}'.format(j, avg_loss_val))
+                    print('iter:{} - average loss:{}, average accuracy: {}'.format(j, avg_loss_val, avg_accu_val))
             save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model{}.ckpt'.format(i)))
         
         cancel_op = dp.q.close(cancel_pending_enqueues=True)
@@ -84,7 +86,7 @@ def evaluate(args):
     dp = preprocess.read_data('dev', opt)
     sess = tf.Session()
     it, enqueue_op = dp.provide(sess)
-    loss, pt = model.build_model(it)
+    loss, pt, accuracy = model.build_model(it)
 
     saver = tf.train.Saver()
 
