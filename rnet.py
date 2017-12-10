@@ -6,9 +6,10 @@ import json
 import os
 import string
 import time
-import threading
+from threading import Thread, Lock
 from tqdm import tqdm
 from models import model
+from evaluate import f1_score, exact_match_score
 
 import preprocess
 
@@ -18,6 +19,8 @@ def run():
     parser.add_argument('--load', type=bool, default=False, help='load models')
     parser.add_argument('--epochs', type=int, default=1, help='Expochs')
     parser.add_argument('--save_dir', type=str, default='models/save/', help='directory to save')
+    parser.add_argument('--model_path', type=str, default='models/save/rnet_model_final', help='saved model file')
+    parser.add_argument('--debug', type=bool, default=False)
 
     args = parser.parse_args()
 
@@ -27,8 +30,8 @@ def run():
     elif args.action == 'eval':
         evaluate(args)
 
-def feeder(dp, sess, enqueue_op, coord, i):
-    dp.load_and_enqueue(sess, enqueue_op, coord, i)
+def feeder(dp, sess, enqueue_op, coord, i, debug):
+    dp.load_and_enqueue(sess, enqueue_op, coord, i, debug)
 
 def train(args):
     opt = json.load(open('models/config.json', 'r'))['rnet']
@@ -56,8 +59,9 @@ def train(args):
         # start feeding threads
         coord = tf.train.Coordinator()
         threads = []
+
         for i in range(opt['num_threads']):
-            t = threading.Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i))
+            t = Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i, args.debug))
             t.start()
             threads.append(t)
         # start training
@@ -68,28 +72,65 @@ def train(args):
                 _, avg_loss_val, pt_val, avg_accu_val = sess.run([train_op, avg_loss, pt, avg_accu])
                 if j % 100 == 0:
                     print('iter:{} - average loss:{}, average accuracy: {}'.format(j, avg_loss_val, avg_accu_val))
+            print('saving rnet_model{}.ckpt'.format(i))
             save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model{}.ckpt'.format(i)))
         
         cancel_op = dp.q.close(cancel_pending_enqueues=True)
         sess.run(cancel_op)
+        print('stopping feeders')
         coord.request_stop()
         coord.join(threads, ignore_live_threads=True)
     
-    save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model_final_{}.ckpt'.format(time.strftime("%Y%m%d-%H%M%S"))))
+    save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model_final.ckpt'))
     
     sess.close()
     print('Training finished, took {} seconds'.format(time.time() - startTime))
 
 def evaluate(args):
     opt = json.load(open('models/config.json', 'r'))['rnet']
-    print('Reading data')
-    dp = preprocess.read_data('dev', opt)
-    sess = tf.Session()
-    it, enqueue_op = dp.provide(sess)
-    loss, pt, accuracy = model.build_model(it)
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
+    saved_model = args.model_path
+    
+    EM = 0.0
+    F1 = 0.0
+    with sess.as_default():
+        print('Reading data')
+        dp = preprocess.read_data('dev', opt)
+        it, enqueue_op = dp.provide(sess)
+        loss, pt, accu = model.build_model(it)
+        dequeued_p, asi, aei = it['p'], it['asi'], it['aei']
 
-    saver = tf.train.Saver()
+         # restore model
+        saver = tf.train.Saver()
+        saver.restore(sess, saved_model)
 
+        # start feeding threads
+        coord = tf.train.Coordinator()
+        threads = []
+        for i in range(opt['num_threads']):
+            t = Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i, args.debug))
+            t.start()
+            threads.append(t)
+        # start prediction
+        print('Prediction starts')
+        num_batch = int(dp.num_sample/dp.batch_size)
+        for j in tqdm(range(num_batch)):
+            pt_val, p_batch, asi_batch, aei_batch = sess.run([pt, dequeued_p, asi, aei])
+            f1, em = 0.0, 0.0
+            for k in range(len(p_batch)):
+                paragraph = p_batch[k]
+                true_start, true_end = asi_batch[k], aei_batch[k]
+                pred_start, pred_end = pt_val[k][0], pt_val[k][1]
+                pred_tokens = paragraph[pred_start:(pred_end+1)]
+                true_tokens = paragraph[true_start:(true_end+1)]
+                f1 += f1_score(' '.join(pred_tokens), ' '.join(true_tokens))
+                em += exact_match_score(' '.join(pred_tokens), ' '.join(true_tokens))
+            print('{}th batch | f1: {} | em: {}'.format(j, f1/len(p_batch), em/len(p_batch)))
+            F1 += f1
+            EM += em
+        print('Evaluation complete, F1 score: {}, EM score: {}'.format(F1/num_batch, EM/num_batch))
 
 
 if __name__ == '__main__':

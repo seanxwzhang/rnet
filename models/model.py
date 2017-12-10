@@ -4,7 +4,7 @@ import tensorflow as tf
 from .rnn_cells import mat_weight_mul, GatedAttentionCell, GatedAttentionSelfMatchingCell, PointerGRUCell
 
 
-class RNet:
+class RNet1:
     @staticmethod
     def random_weight(dim_in, dim_out, name=None, stddev=1.0):
         return tf.Variable(tf.truncated_normal([dim_in, dim_out], stddev=stddev / math.sqrt(float(dim_in))), name=name)
@@ -167,7 +167,7 @@ class RNet:
         return loss, p, accu
 
 
-class RNet2:
+class RNet:
     def random_weight(self, dim_in, dim_out, name=None, stddev=1.0):
         return tf.Variable(tf.truncated_normal([dim_in, dim_out], stddev=stddev / math.sqrt(float(dim_in))), name=name)
 
@@ -371,8 +371,9 @@ class RNet2:
         p1 = p[0]
         p2 = p[1]
 
-        answer_si_idx = answer_si
-        answer_ei_idx = answer_ei
+        answer_si_idx = tf.squeeze(answer_si)
+        answer_ei_idx = tf.squeeze(answer_ei)
+        print(answer_ei_idx)
 
         """	
         ce_si = tf.nn.softmax_cross_entropy_with_logits(labels = answer_si, logits = p1)
@@ -392,4 +393,12 @@ class RNet2:
         log_prob = tf.multiply(tf.gather_nd(p1, batch_idx_si), tf.gather_nd(p2, batch_idx_ei))
         loss = -tf.reduce_sum(tf.log(log_prob + 0.0000001))
 
-        return loss, loss, loss
+
+        preds = [tf.expand_dims(tf.argmax(p1, 1), 1), tf.expand_dims(tf.argmax(p2, 1), 1)]
+        pred = tf.concat(preds, 1)
+        print(pred)
+
+        as_accu, _ = tf.metrics.accuracy(labels=tf.squeeze(answer_si_idx), predictions=preds[0])
+        ae_accu, _ = tf.metrics.accuracy(labels=tf.squeeze(answer_ei_idx), predictions=preds[1])
+
+        return loss, pred, (as_accu + ae_accu) / 2
