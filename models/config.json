@@ -15,7 +15,7 @@
         "q_length":30,
         "a_length":20,
         "span_length":20,
-        "read_batch": 30,
+        "read_batch": 2,
         "token_size": "6B",
         "queue_size": 1000,
         "num_threads": 2,

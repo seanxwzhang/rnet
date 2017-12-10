@@ -129,7 +129,7 @@ class DataProcessor:
         print("{}/{} of word vocab have corresponding vectors in {}".format(len(word2vec), len(word_map), self.glove_path))
         return word2vec
 
-    def load_and_enqueue(self, sess, enqueue_op, coord, iden):
+    def load_and_enqueue(self, sess, enqueue_op, coord, iden, debug):
         '''
         enqueues training sample, per read_batch per time 
         '''
@@ -170,8 +170,8 @@ class DataProcessor:
                     else:
                         paragraph_array = np.array([''], dtype=object)
                     sess.run(enqueue_op, feed_dict={self.it['eP']: p, self.it['eQ']: q, self.it['asi']: asi, self.it['aei']: aei, self.it['p']: paragraph_array})
-            except Exception as e:
-                coord.request_stop(e)
+            except:
+                coord.request_stop()
         
 
     def provide(self, sess):

@@ -20,6 +20,7 @@ def run():
     parser.add_argument('--epochs', type=int, default=1, help='Expochs')
     parser.add_argument('--save_dir', type=str, default='models/save/', help='directory to save')
     parser.add_argument('--model_path', type=str, default='models/save/rnet_model_final', help='saved model file')
+    parser.add_argument('--debug', type=bool, default=False)
 
     args = parser.parse_args()
 
@@ -29,8 +30,8 @@ def run():
     elif args.action == 'eval':
         evaluate(args)
 
-def feeder(dp, sess, enqueue_op, coord, i):
-    dp.load_and_enqueue(sess, enqueue_op, coord, i)
+def feeder(dp, sess, enqueue_op, coord, i, debug):
+    dp.load_and_enqueue(sess, enqueue_op, coord, i, debug)
 
 def train(args):
     opt = json.load(open('models/config.json', 'r'))['rnet']
@@ -58,7 +59,7 @@ def train(args):
         threads = []
 
         for i in range(opt['num_threads']):
-            t = Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i))
+            t = Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i, args.debug))
             t.start()
             threads.append(t)
         # start training
@@ -69,10 +70,12 @@ def train(args):
                 _, avg_loss_val, pt_val = sess.run([train_op, avg_loss, pt])
                 if j % 100 == 0:
                     print('iter:{} - average loss:{}'.format(j, avg_loss_val))
+            print('saving rnet_model{}.ckpt'.format(i))
             save_path = saver.save(sess, os.path.join(args.save_dir, 'rnet_model{}.ckpt'.format(i)))
         
         cancel_op = dp.q.close(cancel_pending_enqueues=True)
         sess.run(cancel_op)
+        print('stopping feeders')
         coord.request_stop()
         coord.join(threads, ignore_live_threads=True)
     
@@ -105,7 +108,7 @@ def evaluate(args):
         coord = tf.train.Coordinator()
         threads = []
         for i in range(opt['num_threads']):
-            t = Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i))
+            t = Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i, args.debug))
             t.start()
             threads.append(t)
         # start prediction
