@@ -44,8 +44,8 @@ class GatedAttentionCell(RNNCell):
 
             tanh = tf.tanh(WuQ_uQ + WuP_utP + WvP_vtP)  # batch_size x q_length x h_size
 
-            s_t = mat_weight_mul(tanh, self.v)  # batch_size x q_length x 1
-            a_t = tf.nn.softmax(s_t, 1)  # batch_size x q_length x 1
+            s_t = mat_weight_mul(tanh, self.v)  # batch_size x q_length
+            a_t = tf.nn.softmax(s_t, 1)  # batch_size x q_length
             c_t = tf.reduce_sum(tf.multiply(a_t, self.uQ), 1)  # batch_size x 2h_size
 
             utP_ct = tf.concat([utP, c_t], 1)  # batch_size x 4H
@@ -63,9 +63,9 @@ class GatedAttentionSelfMatchingCell(RNNCell):
         self.WvP = weights['WvP']  # H * H
         self.WvP_hat = weights['WvP_hat']  # H * H
         self.v = weights['v']  # H x 1
-        self._cell = tf.contrib.rnn.GRUCell(num_units)
-
+        self.Wg2 = weights['Wg2']
         self.vP = encoded_question
+        self._cell = tf.contrib.rnn.GRUCell(num_units)
         self.WvP_vP = mat_weight_mul(self.vP, self.WvP)
 
     @property
@@ -88,8 +88,10 @@ class GatedAttentionSelfMatchingCell(RNNCell):
             a_t = tf.nn.softmax(s_t, 1)
             c_t = tf.reduce_sum(tf.multiply(a_t, self.vP), 1)
             vtP_ct = tf.concat([vtP, c_t], 1)  # batch_size x 2H
+            g_t = tf.sigmoid(tf.matmul(vtP_ct, self.Wg2))
+            new_inputs = tf.multiply(g_t, vtP_ct)
 
-            return self._cell.call(vtP_ct, state)
+            return self._cell.call(new_inputs, state)
 
 
 class PointerGRUCell(RNNCell):

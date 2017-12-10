@@ -10,10 +10,9 @@ import json
 import numpy as np
 import nltk
 from tqdm import tqdm
-import threading
 nltk.download('punkt')
 from nltk.tokenize import word_tokenize
-
+from threading import Lock
 import mmap
 
 def get_num_lines(file_path):
@@ -41,7 +40,7 @@ class DataProcessor:
         self.read_batch = opt['read_batch']
         self.num_sample = 1
         self.no = 0
-        self.no_lock = threading.Lock()
+        self.no_lock = Lock()
 
     def process(self):
         '''
@@ -137,34 +136,42 @@ class DataProcessor:
         assert(self.sink_data)
         assert(self.share_data)
         print('feeder {} started'.format(iden))
+        self.num_sample = len(self.sink_data)
         while not coord.should_stop():
-            self.no_lock.acquire()
-            start_idx = self.no % self.num_sample
-            end_idx = (start_idx + self.read_batch) % self.num_sample
-            self.no += self.read_batch
-            self.no_lock.release()
-            w2v_table = self.share_data['w2v']
-            p = np.zeros((self.p_length, self.emb_dim))
-            q = np.zeros((self.q_length, self.emb_dim))
-            asi = np.zeros((1))
-            aei = np.zeros((1))
-            for i in range(start_idx, end_idx):
-                sample = self.sink_data[i]
-                question = sample['question']
-                paragraph = self.share_data['articles'][sample['ai']][sample['pi']]
-                for j in range(min(len(paragraph), self.p_length)):
-                    try:
-                        p[j] = w2v_table[paragraph[j]]
-                    except KeyError:
-                        pass
-                for j in range(min(len(question), self.q_length)):
-                    try:
-                        q[j] = w2v_table[question[j]]
-                    except KeyError:
-                        pass
-                asi[0] = sample['si']
-                aei[0] = sample['ei']
-                sess.run(enqueue_op, feed_dict={self.it['eP']: p, self.it['eQ']: q, self.it['asi']: asi, self.it['aei']: aei})
+            try:
+                self.no_lock.acquire()
+                start_idx = self.no % self.num_sample
+                end_idx = (start_idx + self.read_batch) % self.num_sample
+                self.no += self.read_batch
+                self.no_lock.release()
+                w2v_table = self.share_data['w2v']
+                p = np.zeros((self.p_length, self.emb_dim))
+                q = np.zeros((self.q_length, self.emb_dim))
+                asi = np.zeros((1))
+                aei = np.zeros((1))
+                for i in range(start_idx, end_idx):
+                    sample = self.sink_data[i]
+                    question = sample['question']
+                    paragraph = self.share_data['articles'][sample['ai']][sample['pi']]
+                    for j in range(min(len(paragraph), self.p_length)):
+                        try:
+                            p[j] = w2v_table[paragraph[j]]
+                        except KeyError:
+                            pass
+                    for j in range(min(len(question), self.q_length)):
+                        try:
+                            q[j] = w2v_table[question[j]]
+                        except KeyError:
+                            pass
+                    asi[0] = sample['si']
+                    aei[0] = sample['ei']
+                    if self.data_type == 'dev':
+                        paragraph_array = np.array([paragraph], dtype=object)
+                    else:
+                        paragraph_array = np.array([''], dtype=object)
+                    sess.run(enqueue_op, feed_dict={self.it['eP']: p, self.it['eQ']: q, self.it['asi']: asi, self.it['aei']: aei, self.it['p']: paragraph_array})
+            except Exception as e:
+                coord.request_stop(e)
         
 
     def provide(self, sess):
@@ -182,19 +189,21 @@ class DataProcessor:
         eQ = tf.placeholder(tf.float32, [self.q_length, self.emb_dim])
         asi = tf.placeholder(tf.int32, [1])
         aei = tf.placeholder(tf.int32, [1])
-        self.it = {'eP': eP, 'eQ': eQ, 'asi': asi, 'aei': aei}
+        p = tf.placeholder(tf.string, [1])
+        self.it = {'eP': eP, 'eQ': eQ, 'asi': asi, 'aei': aei, 'p':p}
         with tf.variable_scope("queue"):
-            self.q = tf.FIFOQueue(self.queue_size, [tf.float32, tf.float32, tf.int32, tf.int32], shapes=[[self.p_length, self.emb_dim], [self.q_length, self.emb_dim], [1], [1]])
-            enqueue_op = self.q.enqueue([eP, eQ, asi, aei])
+            self.q = tf.FIFOQueue(self.queue_size, [tf.float32, tf.float32, tf.int32, tf.int32, tf.string], shapes=[[self.p_length, self.emb_dim], [self.q_length, self.emb_dim], [1],[1],[1]])
+            enqueue_op = self.q.enqueue([eP, eQ, asi, aei, p])
             # qr = tf.train.QueueRunner(q, [enqueue_op] * self.num_threads)
             # tf.train.add_queue_runner(qr)
-            eP_batch, eQ_batch, asi_batch, aei_batch = self.q.dequeue_many(self.batch_size)
+            eP_batch, eQ_batch, asi_batch, aei_batch, p_batch = self.q.dequeue_many(self.batch_size)
             
         input_pipeline = {
             'eP': eP_batch,
             'eQ': eQ_batch,
             'asi': asi_batch,
-            'aei': aei_batch
+            'aei': aei_batch,
+            'p': p_batch
         }
         return input_pipeline, enqueue_op
         
