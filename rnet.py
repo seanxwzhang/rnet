@@ -10,7 +10,6 @@ from threading import Thread, Lock
 from tqdm import tqdm
 from models import model
 from evaluate import f1_score, exact_match_score
-
 import preprocess
 
 def run():
@@ -19,7 +18,7 @@ def run():
     parser.add_argument('--load', type=bool, default=False, help='load models')
     parser.add_argument('--epochs', type=int, default=1, help='Expochs')
     parser.add_argument('--save_dir', type=str, default='models/save/', help='directory to save')
-    parser.add_argument('--model_path', type=str, default='models/save/rnet_model_final', help='saved model file')
+    parser.add_argument('--model_path', type=str, default='models/save/rnet_model_final.ckpt', help='saved model file')
     parser.add_argument('--debug', type=bool, default=False)
 
     args = parser.parse_args()
@@ -86,7 +85,7 @@ def train(args):
 
 def evaluate(args):
     opt = json.load(open('models/config.json', 'r'))['rnet']
-    config = tf.ConfigProto()
+    config = tf.ConfigProto(inter_op_parallelism_threads=1,intra_op_parallelism_threads=1)
     config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
     saved_model = args.model_path
@@ -97,15 +96,18 @@ def evaluate(args):
         print('Reading data')
         dp = preprocess.read_data('dev', opt)
         it, enqueue_op = dp.provide(sess)
-        loss, pt = model.build_model(it)
+        rnet_model = model.RNet(opt)
+        loss, pt, accu = rnet_model.build_model(it)
         dequeued_p, asi, aei = it['p'], it['asi'], it['aei']
-
+        
          # restore model
+        print('restoring model...')
         saver = tf.train.Saver()
         saver.restore(sess, saved_model)
 
         # start feeding threads
         coord = tf.train.Coordinator()
+
         threads = []
         for i in range(opt['num_threads']):
             t = Thread(target=feeder, args=(dp, sess, enqueue_op, coord, i, args.debug))
@@ -118,8 +120,8 @@ def evaluate(args):
             pt_val, p_batch, asi_batch, aei_batch = sess.run([pt, dequeued_p, asi, aei])
             f1, em = 0.0, 0.0
             for k in range(len(p_batch)):
-                paragraph = p_batch[k]
-                true_start, true_end = asi_batch[k], aei_batch[k]
+                paragraph = p_batch[k][0].decode('utf8').split(' ')
+                true_start, true_end = asi_batch[k][0], aei_batch[k][0]
                 pred_start, pred_end = pt_val[k][0], pt_val[k][1]
                 pred_tokens = paragraph[pred_start:(pred_end+1)]
                 true_tokens = paragraph[true_start:(true_end+1)]
@@ -128,7 +130,7 @@ def evaluate(args):
             print('{}th batch | f1: {} | em: {}'.format(j, f1/len(p_batch), em/len(p_batch)))
             F1 += f1
             EM += em
-        print('Evaluation complete, F1 score: {}, EM score: {}'.format(F1/num_batch, EM/num_batch))
+        print('Evaluation complete, F1 score: {}, EM score: {}'.format(F1/dp.num_sample, EM/dp.num_sample))
 
 
 if __name__ == '__main__':

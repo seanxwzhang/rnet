@@ -166,11 +166,14 @@ class DataProcessor:
                     asi[0] = sample['si']
                     aei[0] = sample['ei']
                     if self.data_type == 'dev':
-                        paragraph_array = np.array([paragraph], dtype=object)
+                        paragraph_array = np.array([' '.join(paragraph)], dtype=object)
                     else:
                         paragraph_array = np.array([''], dtype=object)
+                    # print('feeder {} before session run {}'.format(iden, i))
                     sess.run(enqueue_op, feed_dict={self.it['eP']: p, self.it['eQ']: q, self.it['asi']: asi, self.it['aei']: aei, self.it['p']: paragraph_array})
+                    # print('enqueue operation runs')
             except:
+                print('exception happens in feeder')
                 coord.request_stop()
         
 
